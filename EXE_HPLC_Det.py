@@ -133,3 +133,7 @@ def plot_graph_and_display_data():
 
 # ファイルを選択し、グラフとデータを表示
 plot_graph_and_display_data()
+
+if __name__ == "__main__":
+    plot_graph_and_display_data()
+

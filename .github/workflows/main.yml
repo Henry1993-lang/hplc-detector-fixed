@@ -25,8 +25,8 @@ jobs:
         run: |
           pyinstaller EXE_HPLC_Det.py --noconfirm --onefile --noconsole
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: exe-output
-          path: dist/EXE_HPLC_Det.exe
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v3
+#        with:
+#          name: exe-output
+#          path: dist/EXE_HPLC_Det.exe

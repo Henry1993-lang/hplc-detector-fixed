@@ -1,32 +1,35 @@
 name: Build EXE with PyInstaller
 
 on:
-  workflow_dispatch:  # 手動実行のみ（まず動作確認）
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-windows:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pandas numpy matplotlib seaborn scipy
+          pip install -r requirements.txt
 
-      - name: Build with PyInstaller
+      - name: Build EXE with PyInstaller
         run: |
           pyinstaller EXE_HPLC_Det.py --noconfirm --onefile --noconsole
 
-#      - name: Upload artifact
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: exe-output
-#          path: dist/EXE_HPLC_Det.exe
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXE_HPLC_Det
+          path: dist/EXE_HPLC_Det.exe
+

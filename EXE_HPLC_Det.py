@@ -1,139 +1,107 @@
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-from tkinter import Tk, filedialog, Toplevel, Text, Scrollbar, RIGHT, Y, BOTH
-from scipy.signal import find_peaks, peak_widths
+
+import sys
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import pandas as pd
+from PyQt6.QtWidgets import (QTextEdit,
+    QApplication, QWidget, QVBoxLayout, QPushButton,
+    QFileDialog, QLabel, QComboBox, QMessageBox
+)
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from scipy.signal import find_peaks, peak_widths
+import matplotlib.pyplot as plt
 
-# 日本語フォントの設定
-plt.rcParams['font.family'] = 'IPAexGothic'
+class HPLCAnalyzer(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("HPLC Peak Analyzer (PyQt6)")
+        self.setGeometry(200, 200, 1000, 600)
 
-def select_file():
-    """ファイルダイアログを表示してCSVファイルを選択"""
-    root = Tk()
-    root.withdraw()  # メインウィンドウを非表示
-    file_path = filedialog.askopenfilename(
-        filetypes=[("CSV files", "*.csv")], 
-        title="Select a CSV file"
-    )
-    root.destroy()
-    return file_path
+        self.layout = QVBoxLayout()
 
-def plot_graph_and_display_data():
-    # 減衰定数の設定 (18Fの半減期から計算)
-    decay_constant = np.log(2) / (110 * 60)  # 単位: 秒
+        self.label = QLabel("Select Radioisotope:")
+        self.combo = QComboBox()
+        self.combo.addItems(["18F", "11C"])
 
-    # CSVファイルの読み込み（ファイルダイアログから選択）
-    file_path = select_file()
+        self.load_button = QPushButton("Select CSV File")
+        self.load_button.clicked.connect(self.load_csv)
 
-    # ファイルが選択された場合にのみ処理を行う
-    if file_path:
-        try:
-            # CSVファイルを適切なエンコードで読み込み
-            data = pd.read_csv(file_path, encoding='shift-jis')  # もしくは 'ISO-8859-1', 'utf-8'
-        except UnicodeDecodeError:
-            print("エンコーディングの問題が発生しました。異なるエンコーディングで再試行してください。")
+        self.canvas = FigureCanvas(Figure(figsize=(10, 6)))
+        self.ax = self.canvas.figure.add_subplot(111)
+
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.combo)
+        self.layout.addWidget(self.load_button)
+        self.layout.addWidget(self.canvas)
+
+        self.summary_box = QTextEdit()
+        self.summary_box.setReadOnly(True)
+        self.layout.addWidget(self.summary_box)
+        self.setLayout(self.layout)
+
+    def load_csv(self):
+        file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV files (*.csv)")
+        if not file_name:
             return
 
-        # '日時'カラムの時間部分のセパレータを置換してから日付時刻型に変換
-        data['日時'] = pd.to_datetime(data['日時'].str.replace(';', ':'), format='%Y/%m/%d %H:%M:%S')
+        isotope = self.combo.currentText()
+        half_life = {"18F": 110 * 60, "11C": 20.33 * 60}
+        decay_constant = np.log(2) / half_life[isotope]
 
-        # Seabornのテーマ設定
-        sns.set_theme()
+        try:
+            df = pd.read_csv(file_name, encoding="shift-jis")
+            df["日時"] = pd.to_datetime(df["日時"].str.replace(";", ":"), format="%Y/%m/%d %H:%M:%S")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read CSV: {e}")
+            return
 
-        # RI6C4のデータからピークを検出
-        peaks, _ = find_peaks(data['RI6'], height=20, distance=10, prominence=5, width=5)
-        
-        # ピークの幅を取得（widths 関数でピークの左端と右端を取得）
-        results_half = peak_widths(data['RI6'], peaks, rel_height=0.88)
+        ri6_col = next((col for col in df.columns if "RI6" in col), None)
+        if not ri6_col:
+            QMessageBox.warning(self, "Warning", "No 'RI6' column found in CSV.")
+            return
 
-        # 補正前と補正後の面積を格納するリスト
-        original_peak_areas = []
-        corrected_peak_areas = []
+        self.ax.clear()
 
-        # Tkinterウィンドウ内でグラフを表示
-        root = Tk()
-        root.title("グラフとデータ表示")
+        peaks, _ = find_peaks(df[ri6_col], height=20, distance=10, prominence=5, width=5)
+        results_half = peak_widths(df[ri6_col], peaks, rel_height=0.88)
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        self.ax.plot(df["日時"], df[ri6_col], label=ri6_col)
+        ri5_col = next((col for col in df.columns if "RI5" in col), None)
+        uv_col = next((col for col in df.columns if "UV" in col), None)
+        if ri5_col:
+            self.ax.plot(df["日時"], df[ri5_col], label=ri5_col)
+        if uv_col:
+            self.ax.plot(df["日時"], df[uv_col], label=uv_col)
+    
+        self.ax.plot(df["日時"].iloc[peaks], df[ri6_col].iloc[peaks], "x", label="Peaks", color="red")
 
-        # 折れ線グラフの作成
-        sns.lineplot(data=data, x='日時', y='UV_DATA', label='UV_DATAC4', color='black', ax=ax)
-        sns.lineplot(data=data, x='日時', y='RI6', label='RI6', color='red', ax=ax)
-        sns.lineplot(data=data, x='日時', y='RI5', label='RI5', color='navy', ax=ax)
-
-        # 検出されたピークを赤色でプロット
-        ax.plot(data['日時'][peaks], data['RI6'][peaks], "ro", label='Peaks')
-
-        # ピーク範囲の表示と塗りつぶし
+        all_corrected_areas = []
         for i, peak in enumerate(peaks):
-            left_ip = int(results_half[2][i])  # ピークの左端のインデックス
-            right_ip = int(results_half[3][i])  # ピークの右端のインデックス
+            left = int(results_half[2][i])
+            right = int(results_half[3][i])
+            self.ax.fill_between(df["日時"].iloc[left:right], df[ri6_col].iloc[left:right], alpha=0.3)
+            x = (df["日時"].iloc[left:right] - df["日時"].iloc[left]).dt.total_seconds().values
+            y = df[ri6_col].iloc[left:right].values
+            elapsed_time = x[-1] if len(x) > 0 else 0
+            corrected_y = y * np.exp(decay_constant * (x - elapsed_time))
+            area = np.trapz(corrected_y, x)
+            all_corrected_areas.append(area)
+            self.ax.text(df["日時"].iloc[peak], float(df[ri6_col].iloc[peak]) + 0.05 * max(df[ri6_col]), f"{i+1}")
 
-            # 左端と右端に縦線を追加
-            ax.axvline(x=data['日時'][left_ip], color='green', linestyle='--', label='Peak Start' if i == 0 else "")
-            ax.axvline(x=data['日時'][right_ip], color='orange', linestyle='--', label='Peak End' if i == 0 else "")
+        total = sum(all_corrected_areas)
+        summary = [f"Peak {i+1} Area: {area:.1f} ({(area/total*100):.1f}%)" for i, area in enumerate(all_corrected_areas)]
+        self.ax.set_title("HPLC Peak Detection")
+        self.ax.set_xlabel("Time")
+        self.ax.set_ylabel("Signal Intensity")
+        self.ax.legend()
+        self.ax.grid(True)
+        self.canvas.draw()
 
-            # ピーク面積の計算
-            x = (data['日時'][left_ip:right_ip] - data['日時'][left_ip]).dt.total_seconds().values
-            y = data['RI6'][left_ip:right_ip].values
+        self.summary_box.setText("\n".join(summary))
 
-            # 補正前の面積
-            original_area = np.trapz(y, x)
-            original_peak_areas.append(original_area)
-
-            # 減衰補正
-            elapsed_time = (data['日時'][peak] - data['日時'].iloc[0]).total_seconds()
-            decay_correction = np.exp(decay_constant * elapsed_time)
-            corrected_area = original_area * decay_correction
-            corrected_peak_areas.append(corrected_area)
-
-            # 塗りつぶし
-            ax.fill_between(data['日時'][left_ip:right_ip], 0, data['RI6'][left_ip:right_ip], color='red', alpha=0.5)
-
-            # ピークの中心付近にテキストを表示、位置を調整
-            peak_center = data['日時'][left_ip:right_ip].iloc[len(data['日時'][left_ip:right_ip]) // 2]
-            offset = (i % 2) * 0.7 + 0.8  # 偶数と奇数でオフセットを調整
-            ax.text(peak_center, max(y) * (0.5+ offset), f"Area {i+1}", ha='center', va='center', fontsize=10, color='black')
-
-        # x軸とy軸のラベルを非表示
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-
-        # Tkinterウィンドウ内にグラフを埋め込む
-        canvas = FigureCanvasTkAgg(fig, master=root)
-        canvas.draw()
-        canvas.get_tk_widget().pack()
-
-        # 面積とパーセンテージの表示
-        results_window = Toplevel(root)
-        results_window.title("ピーク面積と放射化学純度")
-
-        # テキストウィジェットを使って結果を表示
-        text_widget = Text(results_window, height=15, width=50)
-        text_widget.pack(side="left", fill=BOTH, expand=True)
-
-        scrollbar = Scrollbar(results_window)
-        scrollbar.pack(side=RIGHT, fill=Y)
-        text_widget.config(yscrollcommand=scrollbar.set)
-        scrollbar.config(command=text_widget.yview)
-
-        # ピークごとの面積とパーセンテージを表示
-        text_widget.insert('end', "Percentage of each peak relative to total corrected area:\n")
-        total_corrected_area = sum(corrected_peak_areas)
-        for i, (original_area, corrected_area) in enumerate(zip(original_peak_areas, corrected_peak_areas)):
-            percentage = (corrected_area / total_corrected_area) * 100
-            text_widget.insert('end', f"Peak {i+1}: {percentage:.2f}% (Original Area: {original_area:.2f}, Corrected Area: {corrected_area:.2f})\n")
-
-        root.mainloop()
-
-    else:
-        print("No file was selected.")
-
-# ファイルを選択し、グラフとデータを表示
-plot_graph_and_display_data()
 
 if __name__ == "__main__":
-    plot_graph_and_display_data()
-
+    app = QApplication(sys.argv)
+    window = HPLCAnalyzer()
+    window.show()
+    sys.exit(app.exec())

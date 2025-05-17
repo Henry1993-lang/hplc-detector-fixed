@@ -25,10 +25,10 @@ jobs:
           pip install pyinstaller
 
       - name: Build EXE with PyInstaller
-        run: pyinstaller gla.py --noconfirm --onefile --noconsole --name gla_viewer
+        run: pyinstaller EXE_HPLC_Det.py --noconfirm --onefile --noconsole --name HPLC_Detector
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gla_viewer
-          path: dist/gla_viewer.exe
+          name: HPLC_Detector
+          path: dist/HPLC_Detector.exe

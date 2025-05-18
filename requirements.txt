@@ -4,4 +4,4 @@ matplotlib
 seaborn
 scipy
 pyinstaller
-
+PyQt6
